@@ -105,6 +105,8 @@ int main(int argc, char** argv)
 	cudaFree(GpAin);//Free the allocated memory
 	cudaFree(GpAout);
 	cout << Arrayout[0] << endl;
+	float mean = Arrayout / m;
+	cout << "Mean = " << mean << endl;
 	free(Arrayin);						//free the allocated memory for input
 	free(Arrayout);
 
