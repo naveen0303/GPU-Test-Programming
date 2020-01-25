@@ -43,9 +43,29 @@ __global__ void reduction_sum(float* GpAout, float* GpAin, int m)
 		}
 		__syncthreads();
 	}
-		
+	/*
+	for (int k = 1; k< blockDim.x; k *= 2) {
+		int index = 2 * k * local_id;
+		if (index < blockDim.x) {
+			shareddata[index] += shareddata[index + k];
+		}
+		__syncthreads();
+	}*/
+	
 	// write result for this block to global memory
 	if (local_id == 0) GpAout[blockIdx.x] = shareddata[0];
+}
+
+__global__ void var_sum(float*, float*, float);
+__global__ void var_sum(float* GpAout2, float* GpAin, float mean)
+{
+	//compute the global_id and local_id for each thread
+	int global_id = blockIdx.x * blockDim.x + threadIdx.x;
+
+	// do reduction in shared mem
+	GpAout2[global_id] = pow((GpAin[global_id] - mean), 2);
+	__syncthreads();
+
 }
 
 int main(int argc, char** argv)
@@ -64,10 +84,6 @@ int main(int argc, char** argv)
 		Arrayin[i] = 1;
 	}
 	
-	int datasize2 = 1 * sizeof(float);
-	float* Arrayout = (float*)malloc(datasize2);
-	Arrayout[0] = 0;
-
 	//GPU Implementation starts here
 	cudaDeviceProp prop;
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));	// getting properties of cuda device to get the calculate threads
@@ -76,6 +92,13 @@ int main(int argc, char** argv)
 	dim3 blocks(m / threads.x + 1);
 	int sharedBytes = threads.x * sizeof(float);
 
+	int n = m / threads.x + 1;
+	int datasize2 = n * sizeof(float);
+	float* Arrayout = (float*)malloc(datasize2);
+	for (int i = 0; i < n; i++) {
+		Arrayout[i] = 0;
+	}
+	
 	float* GpAin, *GpAout;						//pointer to device memory
 	HANDLE_ERROR(cudaMalloc(&GpAin, datasize1));		// allocate memory to device pointers
 	HANDLE_ERROR(cudaMalloc(&GpAout, datasize2));
@@ -102,11 +125,40 @@ int main(int argc, char** argv)
 	HANDLE_ERROR(cudaMemcpy(Arrayout, GpAout, datasize1, cudaMemcpyDeviceToHost));	//copy the calculated values back into the CPU from GPU
 
 	
-	cudaFree(GpAin);//Free the allocated memory
+	//cudaFree(GpAin);//Free the allocated memory
 	cudaFree(GpAout);
-	cout << Arrayout[0] << endl;
+	
+	float FinalSum = 0;
+	for (int i = 0; i < n; i++) {
+		FinalSum+=Arrayout[i];
+	}
+	float mean = FinalSum / m;
+	cout << "Mean = " << mean << endl;
+	
+	float* Arrayout2 = (float*)malloc(datasize2);
+	for (int i = 0; i < n; i++) {
+		Arrayout2[i] = 0;
+	}
+
+	float* GpAout2, *GpAout3;						//pointer to device memory
+	HANDLE_ERROR(cudaMalloc(&GpAout2, datasize1));
+	HANDLE_ERROR(cudaMalloc(&GpAout2, datasize2));
+	var_sum <<< blocks, threads >>> (GpAout2, GpAin, mean);
+	reduction_sum << <blocks, threads, sharedBytes >> > (GpAout3, GpAout2, m);
+	HANDLE_ERROR(cudaMemcpy(Arrayout2, GpAout2, datasize1, cudaMemcpyDeviceToHost));	//copy the calculated values back into the CPU from GPU
+
+	float FinalSumV = 0;
+	for (int i = 0; i < n; i++) {
+		FinalSumV += Arrayout2[i];
+	}
+	float variance = FinalSumV / m;
+	cout << "Mean = " << variance << endl;
+
+	cudaFree(GpAin);
+	cudaFree(GpAout2);
 	free(Arrayin);						//free the allocated memory for input
 	free(Arrayout);
+	free(Arrayout2);
 
 	printf("\nComputation Time: %f ms", elapsedTime);
 	//print the time taken for convolution using GPU
