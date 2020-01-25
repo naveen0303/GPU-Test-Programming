@@ -144,7 +144,9 @@ int main(int argc, char** argv)
 	HANDLE_ERROR(cudaMalloc(&GpAout2, datasize1));
 	HANDLE_ERROR(cudaMalloc(&GpAout2, datasize2));
 	var_sum <<< blocks, threads >>> (GpAout2, GpAin, mean);
+	cudaThreadSynchronize();
 	reduction_sum << <blocks, threads, sharedBytes >> > (GpAout3, GpAout2, m);
+	cudaThreadSynchronize();
 	HANDLE_ERROR(cudaMemcpy(Arrayout2, GpAout2, datasize1, cudaMemcpyDeviceToHost));	//copy the calculated values back into the CPU from GPU
 
 	float FinalSumV = 0;
